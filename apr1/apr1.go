@@ -5,13 +5,11 @@ import (
 	"crypto/md5"
 	"crypto/rand"
 	"crypto/subtle"
-	"errors"
 	"math/big"
-	"unicode/utf8"
 )
 
 const (
-	// APR1PREFIX is the identifier for the Apache-specific MD5 algorithm.
+	// Prefix is the identifier for the Apache-specific MD5 algorithm.
 	Prefix = "$apr1$"
 
 	// Size is the size of an MD5 checksum in bytes.
@@ -20,9 +18,10 @@ const (
 	// Blocksize is the blocksize of APR1 in bytes.
 	Blocksize = 64
 
-	// ROUNDS is the number of rounds in the big loop.
+	// Rounds is the number of rounds in the big loop.
 	Rounds = 1000
 
+	// validChars is used to create a base64-like string.
 	validChars = "./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 )
 
@@ -44,120 +43,100 @@ func generateSalt() ([]byte, error) {
 }
 
 // HashPassword hashes the password.
-func HashPassword(keyBytes []byte, salt string) (string, error) {
-	// Must be valid UTF-8 files
-	if !utf8.Valid(keyBytes) || !utf8.ValidString(salt) {
-		return "", errors.New("key and salt must be valid UTF-8")
-	}
-
-	// Generates salt if one isn't found.
-	if salt == "" {
-		sb, err := generateSalt()
-		if err != nil {
-			return "", err
-		}
-		salt = string(sb)
-	}
-
+// Must be valid UTF8 byte arrays.
+// I did not design this algorithm, and the person that did should be
+// placed far far away from a computer.
+func HashPassword(password, salt []byte) (string, error) {
 	digest := md5.New()
-	saltBytes := []byte(salt)
-
-	// we then add the key
-	digest.Write(keyBytes)
-	// add magic string
+	digest.Write(password)
 	digest.Write([]byte(Prefix))
-	// add salt
-	digest.Write(saltBytes)
+	digest.Write(salt)
+
+	passwordLength := len(password)
 
 	// we now add as many characters of the MD5(pw,salt,pw)
 	altDigest := md5.New()
-	altDigest.Write(keyBytes)
-	altDigest.Write(saltBytes)
-	altDigest.Write(keyBytes)
+	altDigest.Write(password)
+	altDigest.Write(salt)
+	altDigest.Write(password)
 	alt := altDigest.Sum(nil)
-	ii := len(keyBytes)
-	for ii > 0 {
+	for ii := passwordLength; ii > 0; ii -= 16 {
 		if ii > 16 {
-			digest.Write(alt[0:16])
+			digest.Write(alt[:16])
 		} else {
-			digest.Write(alt[0:ii])
+			digest.Write(alt[:ii])
 		}
-		ii -= 16
-	}
-	// be secure
-	for i := range alt {
-		alt[i] = 0
 	}
 
 	// ok this is weird
-	ii = len(keyBytes)
-	for ii > 0 {
+	buf := bytes.NewBuffer([]byte{})
+	buf.Grow(passwordLength / 2)
+	for ii := passwordLength; ii > 0; ii >>= 1 {
 		if (ii & 1) == 1 {
-			digest.Write([]byte{0})
+			buf.WriteByte(0)
 		} else {
-			digest.Write([]byte{keyBytes[0]})
+			buf.WriteByte(password[0])
 		}
-		ii >>= 1
 	}
 
-	// we then make the output string
-	outputPrefix := Prefix + salt + "$"
+	digest.Write(buf.Bytes())
+	buf.Reset()
 	finalpw := digest.Sum(nil)
 
 	// now THIS is epic
-
+	ctx := md5.New()
 	for i := 0; i < Rounds; i++ {
-		ctx := md5.New()
-		if (i & 1) != 0 {
-			ctx.Write(keyBytes)
+		if (i & 1) == 1 {
+			ctx.Write(password)
 		} else {
-			ctx.Write(finalpw[0:16])
+			ctx.Write(finalpw[:16])
 		}
 
 		if i%3 != 0 {
-			ctx.Write(saltBytes)
+			ctx.Write(salt)
 		}
 
 		if i%7 != 0 {
-			ctx.Write(keyBytes)
+			ctx.Write(password)
 		}
 
-		if (i & 1) != 0 {
-			ctx.Write(finalpw[0:16])
+		if (i & 1) == 1 {
+			ctx.Write(finalpw[:16])
 		} else {
-			ctx.Write(keyBytes)
+			ctx.Write(password)
 		}
 		finalpw = ctx.Sum(nil)
+		ctx.Reset()
 	}
 
-	result := bytes.NewBuffer([]byte{})
-
-	// This is our own little similar-to-base64-but-not-quite filler
+	// We're only going to read out 24 chars.
+	buf.Grow(24)
+	// 24 bits to base 64 for this
 	fill := func(a byte, b byte, c byte) {
 		v := (uint(a) << 16) + (uint(b) << 8) + uint(c) // take our 24 input bits
 
 		for i := 0; i < 4; i++ { // and pump out a character for each 6 bits
-			result.WriteByte("./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"[v&0x3f])
+			buf.WriteByte(validChars[v&0x3f])
 			v >>= 6
 		}
 	}
-
 	// The order of these indices is strange, be careful
 	fill(finalpw[0], finalpw[6], finalpw[12])
 	fill(finalpw[1], finalpw[7], finalpw[13])
 	fill(finalpw[2], finalpw[8], finalpw[14])
 	fill(finalpw[3], finalpw[9], finalpw[15])
-	fill(finalpw[4], finalpw[10], finalpw[5]) // 5?  Yes.
+	fill(finalpw[4], finalpw[10], finalpw[5])
 	fill(0, 0, finalpw[11])
 
-	resultString := string(result.Bytes()[0:22]) // we wrote two extras since we only need 22.
+	resultString := string(buf.Bytes()[:22])
 
-	return outputPrefix + resultString, nil
+	// we then return the output string
+	return Prefix + string(salt[:8]) + "$" + resultString, nil
 }
 
 // CompareHashes compares two hashes to see if they are identical.
 func CompareHashes(new, old string) bool {
-	if subtle.ConstantTimeCompare([]byte(new), []byte(old)) == 1 {
+	if subtle.ConstantTimeCompare([]byte(new[:]), []byte(old[:])) == 1 {
 		return true
 	}
 	return false
