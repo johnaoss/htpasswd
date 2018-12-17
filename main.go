@@ -138,7 +138,7 @@ func main() {
 
 	parseFlags()
 
-	res, err := apr1.HashPassword([]byte("ligma"), []byte("salt"))
+	res, err := apr1.HashPassword("passwordpassword", "saltsalt")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s\n", res)
 	}
