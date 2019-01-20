@@ -1,8 +1,9 @@
 package apr1_test
 
 import (
-	"testing"
 	"crypto/subtle"
+	"testing"
+
 	"github.com/johnaoss/htpasswd/apr1"
 )
 
@@ -14,11 +15,11 @@ func CompareHashes(newstr, oldstr string) bool {
 	return false
 }
 
-// TestMatchesOriginal checks to see if it matches one created by the 
+// TestMatchesOriginal checks to see if it matches one created by the
 func TestMatchesOriginal(t *testing.T) {
 	// the htpasswd entry is expected.
 	expected := "$apr1$ZIOpPHmv$w.iQ7YJbtKjs/I5iTlVcl/"
-	result, err := apr1.HashPassword("password", "ZIOpPHmv")
+	result, err := apr1.Hash("password", "ZIOpPHmv")
 	if err != nil {
 		t.Errorf(err.Error())
 	} else if result != expected {
@@ -32,7 +33,7 @@ func TestHashSize(t *testing.T) {
 	// The formula for counting the hash size $ + 4 + $ + 8 + $ + 22
 	// Where the prefix is of length 4, salt is 8, and hash is 22.
 	expected := 31 + len(apr1.Prefix)
-	result, err := apr1.HashPassword("passwordpasswordpasswordpassword", "epicepic")
+	result, err := apr1.Hash("passwordpasswordpasswordpassword", "epicepic")
 	if err != nil {
 		t.Errorf(err.Error())
 	} else if len(result) != expected {
@@ -43,7 +44,7 @@ func TestHashSize(t *testing.T) {
 // BenchmarkAPR1Original marks the performance of the hashing function.
 func BenchmarkAPR1Original(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		apr1.HashPassword("password", "saltsalt")
+		apr1.Hash("password", "saltsalt")
 	}
 	b.ReportAllocs()
 }

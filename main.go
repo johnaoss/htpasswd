@@ -24,11 +24,13 @@
 package main
 
 import (
-	"flag"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"syscall"
+
+	flag "github.com/spf13/pflag"
 
 	"github.com/johnaoss/htpasswd/apr1"
 )
@@ -94,17 +96,17 @@ const (
 )
 
 func parseFlags() {
-	flag.CommandLine.Usage = func() {
-		fmt.Printf(usageStr)
+	flag.Usage = func() {
+		fmt.Println(usageStr)
 	}
-	flag.BoolVar(&createFile, "c", false, "")
-	flag.BoolVar(&printOutput, "n", false, "")
-	flag.BoolVar(&verify, "v", false, "")
-	flag.BoolVar(&delete, "D", false, "")
-	flag.BoolVar(&cliPassword, "b", false, "")
-	flag.BoolVar(&stdinPassword, "i", false, "")
-	flag.BoolVar(&useMd5, "m", true, "")
-	flag.BoolVar(&useBcrypt, "B", false, "")
+	flag.BoolVarP(&createFile, "create", "c", false, "")
+	flag.BoolVarP(&printOutput, "print", "n", false, "")
+	flag.BoolVarP(&verify, "verify", "v", false, "")
+	flag.BoolVarP(&delete, "delete", "D", false, "")
+	flag.BoolVarP(&cliPassword, "passargs", "b", false, "")
+	flag.BoolVarP(&stdinPassword, "passstdin", "i", false, "")
+	flag.BoolVarP(&useMd5, "md5", "m", true, "")
+	flag.BoolVarP(&useBcrypt, "bcrypt", "B", false, "")
 	flag.BoolVar(&useNoEncrypt, "p", false, "")
 	flag.BoolVar(&useSHA, "s", false, "")
 	flag.BoolVar(&useCrypt, "d", false, "")
@@ -121,7 +123,7 @@ func parseFlags() {
 	}
 
 	if incorrectUsage {
-		flag.CommandLine.Usage()
+		flag.Usage()
 		os.Exit(ErrArguments)
 	}
 
@@ -138,8 +140,13 @@ func main() {
 
 	parseFlags()
 
-	res, err := apr1.HashPassword("passwordpassword", "saltsalt")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s\n", res)
+	// basic test for hash.
+	// important to note these wont be the same due to randomly generated hashes.
+	if printOutput && cliPassword {
+		hash, err := apr1.Hash(flag.Arg(1), "")
+		if err != nil {
+			log.Fatalf("%s\n", err.Error())
+		}
+		fmt.Printf("%s:%s\n\n", flag.Arg(0), hash)
 	}
 }
